@@ -1,60 +1,125 @@
 import numpy as np
 import matplotlib.pyplot as plt
-from scipy import signal, fft
+from scipy.fft import fft, fftshift, fftfreq
+from scipy.signal import butter, sosfiltfilt
 import os
 
-# Вхідні параметри
+# Дано
 n = 500
 Fs = 1000
 F_max = 15
+F_filter = 22
 
+Dt_values = [2, 4, 8, 16]
 
-# Генерація випадкового сигналу
-random_signal = np.random.normal(0, 10, n)
+# Формування часу
+t = np.arange(n) / Fs
 
-# Формування осі часу
-time = np.arange(n) / Fs
+# Генераія випадкового сигналу
+signal = np.random.randn(n)
 
-#  Розрахунок ФНЧ
-w = F_max / (Fs / 2)
+# Фільтрація для обмеження F_max
+w0 = F_max / (Fs / 2)
+sos0 = butter(3, w0, 'low', output='sos')
+signal = sosfiltfilt(sos0, signal)
 
-sos = signal.butter(3, w, btype='low', output='sos')
+# Списки для збереження
+discrete_signals = []
+discrete_spectrums = []
+restored_signals = []
+variances = []
+snr_values = []
 
-# Фільтрація сигналу
-filtered_signal = signal.sosfiltfilt(sos, random_signal)
+# Основний цикл
+for Dt in Dt_values:
 
-# Функція для побудови графіку
-def plot_graph(x, y, title, xlabel, ylabel):
-    fig, ax = plt.subplots(figsize=(21/2.54, 14/2.54))
-    ax.plot(x, y, linewidth=1)
-    ax.set_xlabel(xlabel, fontsize=14)
-    ax.set_ylabel(ylabel, fontsize=14)
-    ax.set_title(title, fontsize=14)
-    fig.savefig("figures/" + title + ".png", dpi=600)
+# Дискретизація
+    discrete_signal = np.zeros(n)
+
+    for i in range(0, round(n / Dt)):
+        discrete_signal[i * Dt] = signal[i * Dt]
+
+    discrete_signals += [list(discrete_signal)]
+
+# Розрахунок спектру
+    spectrum = np.abs(fftshift(fft(discrete_signal)))
+    discrete_spectrums += [list(spectrum)]
+
+# Відновлення через ФНЧ
+    w = F_filter / (Fs / 2)
+    sos = butter(3, w, 'low', output='sos')
+    restored_signal = sosfiltfilt(sos, discrete_signal)
+
+    restored_signals += [list(restored_signal)]
+
+# Розрахунок похибки
+    E1 = restored_signal - signal
+
+    var_signal = np.var(signal)
+    var_error = np.var(E1)
+
+    variances += [var_error]
+    snr_values += [var_signal / var_error]
+
+# Частотна вісь
+freq = fftshift(fftfreq(n, d=1/Fs))
+
+# Функція побудови
+def plot_2x2(x, y, title, x_label, y_label):
+
+    fig, ax = plt.subplots(2, 2, figsize=(21/2.54, 14/2.54))
+
+    line_width = 1
+    font_size = 14
+
+    s = 0
+    for i in range(2):
+        for j in range(2):
+            ax[i][j].plot(x, y[s], linewidth=line_width)
+            ax[i][j].set_title(f'Dt = {Dt_values[s]}', fontsize=font_size)
+            s += 1
+
+    fig.supxlabel(x_label, fontsize=font_size)
+    fig.supylabel(y_label, fontsize=font_size)
+    fig.suptitle(title, fontsize=font_size)
+
+    os.makedirs("figures", exist_ok=True)
+    fig.savefig('./figures/' + title + '.png', dpi=600)
     plt.close()
 
-# Побдова сигналу
-plot_graph(
-    time,
-    filtered_signal,
-    "Сигнал з максимальною частотою F_max = 15 Гц",
-    "Час (секунди)",
-    "Амплітуда сигналу"
-)
+# Побудова графіків
+# Дискретизовані сигнали
+plot_2x2(t, discrete_signals,
+         "Дискретизовані сигнали",
+         "Час (с)",
+         "Амплітуда")
 
-#  Розрахунок спектру
-spectrum = fft.fft(filtered_signal)
-spectrum_shifted = np.abs(fft.fftshift(spectrum))
+# Спектри
+plot_2x2(freq, discrete_spectrums,
+         "Дискретні спектри сигналів",
+         "Частота (Гц)",
+         "Амплітуда спектру")
 
-freqs = fft.fftfreq(n, 1/Fs)
-freqs_shifted = fft.fftshift(freqs)
+# Відновлені сигнали
+plot_2x2(t, restored_signals,
+         "Відновлені сигнали",
+         "Час (с)",
+         "Амплітуда")
 
-#  Побудова спектру
-plot_graph(
-    freqs_shifted,
-    spectrum_shifted,
-    "Спектр сигналу з максимальною частотою F_max = 15 Гц",
-    "Частота (Гц)",
-    "Амплітуда спектру"
-)
+# Графік дисперсії
+plt.figure(figsize=(21/2.54, 14/2.54))
+plt.plot(Dt_values, variances, linewidth=1)
+plt.xlabel("Dt", fontsize=14)
+plt.ylabel("Дисперсія", fontsize=14)
+plt.title("Дисперсія vs Dt", fontsize=14)
+plt.savefig('./figures/Дисперсія_vs_Dt.png', dpi=600)
+plt.close()
 
+# Графік ССШ
+plt.figure(figsize=(21/2.54, 14/2.54))
+plt.plot(Dt_values, snr_values, linewidth=1)
+plt.xlabel("Dt", fontsize=14)
+plt.ylabel("ССШ", fontsize=14)
+plt.title("ССШ vs Dt", fontsize=14)
+plt.savefig('./figures/ССШ_vs_Dt.png', dpi=600)
+plt.close()
